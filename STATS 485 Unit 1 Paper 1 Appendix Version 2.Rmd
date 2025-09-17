@@ -241,21 +241,6 @@ conf_int_eff_df %>%
   theme(text = element_text(size = 14))
 ```
 
-
-
-
-h
-
-h
-h
-
-
-
-
-h
-
-hhh
-
 Table for age-specific vaccine efficacies versus the overall unweighted vaccine efficacy. 
 ```{r}
 table_df = conf_int_eff_df %>% 
