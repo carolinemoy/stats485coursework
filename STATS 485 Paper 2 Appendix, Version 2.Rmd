@@ -1,0 +1,338 @@
+---
+title: "STATS 485 Paper 2 Appendix, Version 2"
+author: "Caroline Moy"
+output: pdf_document
+date: "2025-02-19"
+---
+
+This appendix contains the calculations for the paper "Is Overconfidence a Gender Issue?" First the necessary packages and data will be loaded in, followed by exploratory data analysis, fitting of a linear regression model to predict overconfidence using intelligence theory and attention experimental condition and then using the results to motivate adding gender into the next model. The mean squared error of each model is then computed and finally an ANOVA test between the two models is performed, to see if adding gender is improving model fit in a meaningful way. With version 2, a hold out set was provided, so the mean-squared error is computed for the model with and without gender, to see the generalizability of these two models. In addition, a Wilcoxon signed ranks test is performed to see if the residuals between these two models are significantly different, does one model systematically give larger or smaller residuals on the hold out set? 
+
+# Necessary Libraries and Datasets
+```{r}
+library(tidyverse)
+library(readr)
+library(splines)
+library(caret)
+library(MASS)
+```
+
+```{r}
+attention = read_csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/emdstudy3-small-nogender.csv")
+attention_gender = read_csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/emdstudy3-small.csv")
+```
+
+```{r}
+hold_out_set = read_csv("http://dept.stat.lsa.umich.edu/~bbh/s485/data/emdstudy3-holdout.csv")
+```
+
+# Exploratory Data Analysis
+Creating overconfidence variable. 
+```{r}
+attention_gender = attention_gender %>% 
+  mutate(overconfidence = EstPerc - ActPerc)
+```
+
+Checking for NA in dataset.
+```{r}
+sum(is.na(attention_gender))
+```
+
+Finding overall mean of overconfidence. 
+```{r}
+mean(attention_gender$overconfidence)
+```
+
+Finding top 10 scorers of exam and individuals with top 10 estimated percentiles. 
+```{r}
+attention_gender %>% 
+  arrange(desc(ActPerc)) %>% 
+  head(10) %>% 
+  group_by(gender) %>% 
+  summarize(gender_count = n())
+
+attention_gender %>% 
+  arrange(desc(EstPerc)) %>% 
+  head(10) %>% 
+  group_by(gender) %>% 
+  summarize(gender_count = n())
+```
+
+Gender differences in Overconfidence. 
+```{r}
+gender_diff = attention_gender %>% 
+  group_by(gender) %>% 
+  mutate('Gender' = gender) %>% 
+  summarize(`Average Percent` = mean(ActPerc), 
+            `Standard Deviation` = sqrt(var(ActPerc)))
+
+knitr::kable(gender_diff,
+             caption = "Overconfidence Stratified by Gender and Attention Treatment",
+             "simple", 
+             digits = 3)
+```
+
+Overconfidence based on experimental condition and gender. 
+```{r}
+attention_gender %>% 
+  group_by(gender, attn_to) %>% 
+  summarize(avg_overconfidence = mean(overconfidence), 
+            std_overconfidence = sqrt(var(overconfidence))) 
+```
+
+Graph of Overconfidence. 
+```{r}
+attention_gender %>% 
+  ggplot(aes(x = overconfidence)) + 
+  geom_histogram() + 
+  theme_classic()
+```
+
+Variety of Graphs Studying Varibles' Relationships. 
+```{r}
+attention_gender %>%  
+  ggplot(aes(x = attn_to, y = overconfidence)) + 
+  geom_boxplot()
+
+attention_gender %>%  
+  ggplot(aes(x = gender, y = overconfidence)) + 
+  geom_boxplot()
+
+attention_gender %>%  
+  ggplot(aes(x = gender, y = intel_theory)) + 
+  geom_boxplot()
+
+attention_gender %>% 
+  ggplot(aes(x = intel_theory, y = overconfidence, color = attn_to)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm', se = FALSE)
+
+attention_gender %>% 
+  ggplot(aes(x = intel_theory, y = overconfidence, color = gender)) + 
+  geom_point() + 
+  geom_smooth(se = FALSE)
+
+attention_gender %>% 
+  ggplot(aes(x = intel_theory, y = overconfidence, color = interaction(gender, attn_to), shape = gender)) + 
+  geom_point(size = 2) + 
+  geom_smooth(aes(color = interaction(gender, attn_to)), method = 'lm', se = FALSE) + 
+  geom_hline(yintercept = 0, linetype = 'dashed') + 
+  theme_classic() + 
+  labs(x = "Intelligence Theory", y = 'Overconfidence', color = "Gender & Condition", shape = "Gender") + 
+  scale_color_manual(values = c("M.hardprobs" = "navy", "W.hardprobs" = "purple", 
+                                "M.easyprobs" = "skyblue", "W.easyprobs" = "orchid"), 
+                     labels = c("M.hardprobs" = "Man - Hard Problems", 
+                                "W.hardprobs" = "Woman - Hard Problems", 
+                                "M.easyprobs" = "Man - Easy Problems", 
+                                "W.easyprobs" = "Woman - Easy Problems")) + 
+  scale_shape_manual(values = c("M" = 16, "W" = 17), 
+                     labels = c("M" = "Man", "W" = "Woman")) + 
+  ggtitle('Intelligence Theory vs. Overconfidence with Gender and Experimental Condition') + 
+  theme(text=element_text(size=12))
+
+attention_gender %>% 
+  ggplot(aes(x = intel_theory, y = overconfidence, color = attn_to)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm', se = FALSE)
+```
+
+# Linear Model Fitting 
+
+## Model without Gender, with interaction terms. 
+```{r}
+lin_int_mod = lm(overconfidence ~ intel_theory * attn_to, data = attention_gender)
+summary(lin_int_mod)
+for(i in 1:2){
+  plot(lin_int_mod, which=i)
+}
+
+attention_gender %>% 
+  mutate(predictions = predict(lin_int_mod)) %>% 
+  ggplot(aes(x = predictions, y = overconfidence, color = gender)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm', se = FALSE) + 
+  geom_hline(yintercept = 0, linetype = 'dashed') + 
+  theme_classic() + 
+  labs(x = "Predicted Overconfidence", y = 'Actual Overconfidence', color = "Gender") + 
+  scale_color_manual(values = c("M" = 'blue', "W" = 'red'), 
+                     labels = c("M" = "Man", "W" = "Woman")) + 
+  ggtitle('In-Sample Predictions vs. Actual Overconfidence from Model without Gender') + 
+  theme(text=element_text(size=12))
+
+# Residual versus fitted shows constant variance 
+
+# Q-Q plot shows normality
+
+# Actual y versus predicted y shows us if something might be missed by not expressing gender 
+```
+
+Checking for Overconfidence versus residual. 
+```{r}
+s_hat = sd(resid(lin_int_mod))
+par(mfrow = c(2, 2))
+plot(attention_gender$overconfidence, resid(lin_int_mod))
+replicate(3, 
+          plot(attention_gender$overconfidence, rnorm(nrow(attention_gender), sd = s_hat)))
+par(mfrow = c(1, 1))
+# this shows us that our model does VERY bad for the extremes and predicts small values only (hovering around 0)
+# aligns with the intuition that none of the coefficients are significant, so basically there's no difference from just prediction overconfidence at all moments 
+# nothing really fits this data well 
+```
+
+This shows us that our model does VERY bad for the extremes and predicts small values only (hovering around 0), which aligns with the intuition that none of the coefficients are significant, so basically there's no difference from just predicting the mean of overconfidence. 
+
+### Testing on the Hold Out Set
+```{r}
+hold_out_set = hold_out_set %>% 
+  mutate(overconfidence = EstPerc - ActPerc)
+
+preds_hold_out = predict(lin_int_mod, hold_out_set, type = 'response')
+
+resids_hold_out = preds_hold_out - hold_out_set$overconfidence
+```
+
+```{r}
+hold_out_set %>% 
+  mutate(predictions = predict(lin_int_mod, hold_out_set)) %>% 
+  ggplot(aes(x = predictions, y = overconfidence, color = gender)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm', se = FALSE) + 
+  geom_hline(yintercept = 0, linetype = 'dashed') + 
+  theme_classic() + 
+  labs(x = "Predicted Overconfidence", y = 'Actual Overconfidence', color = "Gender") + 
+  scale_color_manual(values = c("M" = 'blue', "W" = 'red'), 
+                     labels = c("M" = "Man", "W" = "Woman")) + 
+  ggtitle('Out-of-Sample Predictions vs. Actual Overconfidence from Model without Gender') + 
+  theme(text=element_text(size=12))
+```
+
+## Attempting non-linear models, violation of assumptions ensue. 
+```{r}
+quad_int_mod = lm(overconfidence ~ poly(intel_theory,2) * attn_to, data = attention_gender)
+summary(quad_int_mod)
+plot(quad_int_mod, which=1)
+```
+
+```{r}
+bs_spline_mod = lm(overconfidence ~ bs(intel_theory) + attn_to, data = attention_gender)
+summary(bs_spline_mod)
+plot(bs_spline_mod, which=1)
+```
+
+From this analysis, it's not worth using the non-linear models because they have a clear pattern in their residuals and this would just violate the assumptions of the lm() model grossly. Therefore, we will stick to linear models with interaction terms. 
+
+## Model with Gender, with interaction terms. 
+```{r}
+lin_mod_gen_int = lm(overconfidence ~ intel_theory * attn_to * gender, data = attention_gender)
+summary(lin_mod_gen_int)
+plot(lin_mod_gen_int, which=1)
+```
+
+```{r}
+summary(lin_mod_gen_int)
+for(i in 1:2){
+  plot(lin_mod_gen_int, which=i)
+}
+
+attention_gender %>% 
+  mutate(predictions = predict(lin_mod_gen_int)) %>% 
+  ggplot(aes(x = predictions, y = overconfidence, color = gender)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm', se = FALSE) + 
+  geom_hline(yintercept = 0, linetype = 'dashed') + 
+  theme_classic() + 
+  labs(x = "Predicted Overconfidence", y = 'Actual Overconfidence', color = "Gender") + 
+  scale_color_manual(values = c("M" = 'blue', "W" = 'red'), 
+                     labels = c("M" = "Man", "W" = "Woman")) + 
+  ggtitle('In-Sample Predictions vs. Actual Overconfidence from Model with Gender') + 
+  theme(text=element_text(size=12))
+```
+
+```{r}
+s_hat = sd(resid(lin_mod_gen_int))
+par(mfrow = c(2, 2))
+plot(attention_gender$overconfidence, resid(lin_mod_gen_int))
+replicate(3, 
+          plot(attention_gender$overconfidence, rnorm(nrow(attention_gender), sd = s_hat)))
+par(mfrow = c(1, 1))
+```
+
+### Testing on Hold Out Set 
+```{r}
+preds_hold_out_gen = predict(lin_mod_gen_int, hold_out_set, type = 'response')
+
+resids_hold_out_gen = preds_hold_out_gen - hold_out_set$overconfidence
+```
+
+```{r}
+hold_out_set %>% 
+  mutate(predictions = predict(lin_mod_gen_int, hold_out_set)) %>% 
+  ggplot(aes(x = predictions, y = overconfidence, color = gender)) + 
+  geom_point() + 
+  geom_smooth(method = 'lm', se = FALSE) + 
+  geom_hline(yintercept = 0, linetype = 'dashed') + 
+  theme_classic() + 
+  labs(x = "Predicted Overconfidence", y = 'Actual Overconfidence', color = "Gender") + 
+  scale_color_manual(values = c("M" = 'blue', "W" = 'red'), 
+                     labels = c("M" = "Man", "W" = "Woman")) + 
+  ggtitle('Out-of-Sample Predictions vs. Actual Overconfidence from Model with Gender') + 
+  theme(text=element_text(size=12))
+```
+
+# In-sample Mean-Squared Error (MSE)
+```{r}
+mse_nogender = mean(residuals(lin_int_mod)^2)
+
+mse_gender = mean(residuals(lin_mod_gen_int)^2)
+
+print(mse_nogender); print(mse_gender)
+```
+The MSE for the model with no-gender is higher than the one with gender. 
+
+Percent decrease of MSE with the addition of gender. 
+```{r}
+(mse_nogender - mse_gender) / ((mse_nogender + mse_gender) / 2)
+```
+
+# Out-of-Sample MSE 
+```{r}
+non_gen_hold_out_mse = mean(resids_hold_out^2)
+gen_hold_out_mse = mean(resids_hold_out_gen^2)
+
+non_gen_hold_out_mse; gen_hold_out_mse
+```
+When tested out of sample, the model with gender performs worse in MSE. 
+
+# ANOVA test
+Same assumptions to preform linear model so we can perform this. 
+```{r}
+anova(lin_int_mod, lin_mod_gen_int)
+```
+
+Adding gender does make a signficant difference. Small sample set with noisy data, so would need to have more data to possibly come up with something. 
+# Wilcoxon Signed Ranks Test
+
+Checking the loose assumption of symmetry of squared residuals. 
+
+```{r}
+square_err_hold_out = resids_hold_out^2
+square_err_hold_out_gen = resids_hold_out_gen^2
+
+hist(square_err_hold_out)
+hist(square_err_hold_out_gen)
+```
+These distributions are not entirely different, however the squared errors for the model which include gender is much more right skewed. There is one squared error which is around 7000 to 8000, which is probably why the MSE for the model with gender is higher. But, this is only driven by a single point. The Wilcoxon test does have a flexibility assumption of symmetry in the models but if violated it just makes the results less strong, but doesn't invalidate the test entirely. 
+
+Checking the distribution of the differences of squared errors. 
+```{r}
+differences = square_err_hold_out - square_err_hold_out_gen
+hist(differences)
+median(differences)
+```
+On average, the differences between the squared error between the two models on the held out data set hovers around 0, except one point which has a different of -4000. This is again distorting the results, making it seem like the model without gender is superior which might not actually be the case. The data may just be more sparse and that point could be seen as an outlier. 
+
+```{r}
+wilcox_test_result <- wilcox.test(square_err_hold_out, square_err_hold_out_gen, paired = TRUE, alternative = "two.sided")
+
+wilcox_test_result
+```
+Using the Wilcoxon Signed Ranks Test to see if these models perform significantly different on the held-out data, using an $\alpha$ level of 0.05, these two models do not perform significantly different on the held out data. However, it's important to note that the conclusion changes when using an $\alpha$ level of 0.1. The addition of gender helped performance on the in sample loss, but that is generally regarded as less important compared to the out-of-sample loss, which indicates that the addition of gender may have just allowed over fitting for predictions. However, more data should be collected because the p-value of the Wilcoxon signed rank test is not significant for all commonly used thresholds. In addition, since the Wilcoxon signed ranks test doesn't follow the assumption of symmetry, this makes the results more weak, which means the actual p-value of the differences between the residuals of these two models might be higher in practice with more rigorous methods. 
